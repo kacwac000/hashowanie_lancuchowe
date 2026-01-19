@@ -1,166 +1,68 @@
-import tkinter as tk
-from tkinter import messagebox, filedialog
+import time
+import random
+import matplotlib.pyplot as plt
 
-TABLE_SIZE = 10
-hash_table = [[] for _ in range(TABLE_SIZE)]
+def compute_pi(terms=10_000_000):
+    pi = 0.0
+    for k in range(terms):
+        pi += (-1)**k / (2*k + 1)
+    pi *= 4
+    return pi
 
-def h(key):
-    return sum(ord(c) for c in key)
+def random_key(n):
+    return [str(i) for i in range(n)]
 
-CELL_W = 120
-CELL_H = 45
-CELL_MARGIN = 5
+def benchmark_uniform(n):
+    table = dict()
+    keys = random_key(n)
+    values = [random.randint(0, 1000000) for _ in range(n)]
 
-def draw_table(highlight_index=None):
-    canvas.delete("all")
-    y_offset = 10
-    line_height = 15
+    start = time.perf_counter()
+    for k, v in zip(keys, values):
+        table[k] = v
+    t_insert = time.perf_counter() - start
 
-    for i in range(TABLE_SIZE):
-        bucket = hash_table[i]
-        bucket_height = max(CELL_H, line_height * len(bucket) + 10)
+    search_keys = keys[:n//2] + [str(n+i) for i in range(n//2)]
+    random.shuffle(search_keys)
+    start = time.perf_counter()
+    for k in search_keys:
+        _ = table.get(k, None)
+    t_search = time.perf_counter() - start
 
-        x1 = 10
-        y1 = y_offset
-        x2 = x1 + CELL_W
-        y2 = y1 + bucket_height
+    delete_keys = keys[:n//2]
+    start = time.perf_counter()
+    for k in delete_keys:
+        table.pop(k, None)
+    t_delete = time.perf_counter() - start
 
-        color = "white"
-        if i == highlight_index:
-            color = "yellow"
+    return t_insert, t_search, t_delete
 
-        canvas.create_rectangle(x1, y1, x2, y2, fill=color)
-        canvas.create_text(x1 + 20, y1 + 20, text=str(i), font=("Arial", 12, "bold"))
+start_ref = time.perf_counter()
+compute_pi(terms=5_000_000)
+ref_time = time.perf_counter() - start_ref
+print(f"Jednostka referencyjna: {ref_time:.6f} s")
 
-        for j, (k, v) in enumerate(bucket):
-            canvas.create_text(
-                x2 + 10,
-                y1 + 5 + j * line_height,
-                text=f"{k}:{v}",
-                font=("Consolas", 11),
-                anchor="nw",
-            )
-        y_offset += bucket_height + CELL_MARGIN
+sizes = [100, 1000, 10000, 100000, 1000000, 10000000]
+insert_times, search_times, delete_times = [], [], []
 
-    canvas.update_idletasks()
-    canvas.config(scrollregion=canvas.bbox("all"))
+for n in sizes:
+    t_insert, t_search, t_delete = benchmark_uniform(n)
+    insert_times.append(t_insert / ref_time)
+    search_times.append(t_search / ref_time)
+    delete_times.append(t_delete / ref_time)
+    print(f"N={n}, INSERT={insert_times[-1]:.2f} π, SEARCH={search_times[-1]:.2f} π, DELETE={delete_times[-1]:.2f} π")
 
-def update_chart():
-    chart_canvas.delete("all")
-    bucket_sizes = [len(b) for b in hash_table]
-    max_height = max(bucket_sizes + [1])
-    width = 30
-    spacing = 10
-    margin = 10
-    canvas_height = int(chart_canvas['height'])
+plt.figure(figsize=(10,6))
+plt.plot(sizes, insert_times, marker='o', label='INSERT')
+plt.plot(sizes, search_times, marker='s', label='SEARCH')
+plt.plot(sizes, delete_times, marker='^', label='DELETE')
 
-    for i, size in enumerate(bucket_sizes):
-        x0 = margin + i * (width + spacing)
-        y0 = canvas_height - (size / max_height * (canvas_height - 20))
-        x1 = x0 + width
-        y1 = canvas_height
-        chart_canvas.create_rectangle(x0, y0, x1, y1, fill="skyblue")
-        chart_canvas.create_text(x0 + width/2, y0 - 5, text=str(size), anchor="s")
-        chart_canvas.create_text(x0 + width/2, y1 + 10, text=str(i), anchor="n")
-
-def do_search(key=None):
-    key = key or entry_key.get()
-    if not key:
-        messagebox.showwarning("Uwaga", "Podaj klucz!")
-        return
-    index = h(key) % TABLE_SIZE
-    draw_table(index)
-    bucket = hash_table[index]
-    for k, v in bucket:
-        if k == key:
-            update_chart()
-            return
-    update_chart()
-
-def do_insert(key=None, value=None):
-    key = key or entry_key.get()
-    value = value or entry_val.get()
-    if not key or not value:
-        messagebox.showwarning("Uwaga", "Podaj klucz i wartość!")
-        return
-    index = h(key) % TABLE_SIZE
-    bucket = hash_table[index]
-    for i, (k, v) in enumerate(bucket):
-        if k == key:
-            bucket[i] = (key, value)
-            draw_table(index)
-            update_chart()
-            return
-    bucket.append((key, value))
-    draw_table(index)
-    update_chart()
-
-def do_delete(key=None):
-    key = key or entry_key.get()
-    if not key:
-        messagebox.showwarning("Uwaga", "Podaj klucz!")
-        return
-    index = h(key) % TABLE_SIZE
-    bucket = hash_table[index]
-    for i, (k, v) in enumerate(bucket):
-        if k == key:
-            del bucket[i]
-            draw_table(index)
-            update_chart()
-            return
-    draw_table(index)
-    update_chart()
-
-def load_file():
-    file_path = filedialog.askopenfilename(title="Wybierz plik", filetypes=[("Text Files","*.txt"),("All files","*.*")])
-    if not file_path:
-        return
-    with open(file_path, "r", encoding="utf-8") as f:
-        for line in f:
-            parts = line.strip().split()
-            if not parts:
-                continue
-            cmd = parts[0].upper()
-            if cmd=="INSERT" and len(parts)>=3:
-                key,value = parts[1], " ".join(parts[2:])
-                do_insert(key,value)
-            elif cmd=="SEARCH" and len(parts)==2:
-                do_search(parts[1])
-            elif cmd=="DELETE" and len(parts)==2:
-                do_delete(parts[1])
-
-root = tk.Tk()
-root.title("Hashowanie łańcuchowe")
-
-controls = tk.Frame(root, padx=10, pady=10)
-controls.pack(side="left", fill="y")
-
-tk.Label(controls, text="Klucz:").pack()
-entry_key = tk.Entry(controls); entry_key.pack(pady=5)
-tk.Label(controls, text="Wartość:").pack()
-entry_val = tk.Entry(controls); entry_val.pack(pady=5)
-
-tk.Button(controls,text="SEARCH",command=do_search).pack(pady=5)
-tk.Button(controls,text="INSERT",command=do_insert).pack(pady=5)
-tk.Button(controls,text="DELETE",command=do_delete).pack(pady=5)
-tk.Button(controls,text="ZALADUJ Z PLIKU",command=load_file).pack(pady=5)
-
-tk.Label(controls,text="Rozkład elementów w bucketach:").pack(pady=5)
-chart_canvas = tk.Canvas(controls, width=450, height=300, bg="white")
-chart_canvas.pack(pady=5)
-
-canvas_frame = tk.Frame(root)
-canvas_frame.pack(side="right", fill="both", expand=True, padx=10, pady=10)
-
-canvas_scrollbar = tk.Scrollbar(canvas_frame, orient="vertical")
-canvas_scrollbar.pack(side="right", fill="y")
-
-canvas = tk.Canvas(canvas_frame, width=450, height=600, bg="white",
-                   yscrollcommand=canvas_scrollbar.set)
-canvas.pack(side="left", fill="both", expand=True)
-
-canvas_scrollbar.config(command=canvas.yview)
-
-draw_table()
-update_chart()
-root.mainloop()
+plt.xscale('log')
+plt.yscale('log')
+plt.xlabel('Liczba elementów (N)')
+plt.ylabel('Czas / jednostka referencyjna (π)')
+plt.title('Czas wykonania obliczeń')
+plt.grid(True, which="both", ls="--", lw=0.5)
+plt.legend()
+plt.tight_layout()
+plt.show()
